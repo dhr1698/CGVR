@@ -42,7 +42,7 @@ The repository includes POPE question and label files in [`benchmark/POPE/`](ben
 | A-OKVQA | `benchmark/POPE/aokvqa/` | [COCO 2014 validation images](https://cocodataset.org/#download) |
 | GQA | `benchmark/POPE/gqa/` | [GQA images](https://cs.stanford.edu/people/dorarad/gqa/download.html) |
 
-For the default run, place the COCO validation JPEGs directly in `data/coco/`, so paths look like `data/coco/COCO_val2014_000000310196.jpg`. If the images are already in a different directory, pass that directory as `--image-folder` to inference scripts.
+For the default run, place the COCO validation JPEGs directly in `data/coco/`, so paths look like `data/coco/COCO_val2014_000000429109.jpg`.
 
 ## Run CGVR on POPE
 
@@ -90,7 +90,7 @@ python eval/eval_pope.py
 
 Table 1 of the paper reports the following LLaVA-1.5 results on the MS-COCO adversarial split of POPE. It also reports results for the other splits and for Qwen-VL. [Paper, Table 1](https://aclanthology.org/2026.aacl-long.197.pdf#page=6)
 
-| Method | Accuracy | Precision | Recall | F1 |
+| Method | Accuracy | Precision | Recall | F1 Score |
 | --- | ---: | ---: | ---: | ---: |
 | Vanilla LLaVA-1.5 | 78.96% | 83.06% | 72.75% | 77.57% |
 | LLaVA-1.5 + CGVR | 83.73% | 83.42% | 84.20% | 83.81% |
