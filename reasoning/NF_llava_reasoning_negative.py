@@ -1,22 +1,28 @@
 import argparse
-import torch
-
 import json
 import os
-import shortuuid
-
 import sys
-sys.path.append("./")
 
-from model.llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from model.llava.conversation import conv_templates
-from model.llava.model.builder import load_pretrained_model
-from model.llava.utils import disable_torch_init
-from model.llava.mm_utils import tokenizer_image_token, get_model_name_from_path
+import shortuuid
+import torch
+
+sys.path.append("./")
+sys.path.append("./model")
 
 from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
+
+from model.llava.constants import (
+    DEFAULT_IM_END_TOKEN,
+    DEFAULT_IM_START_TOKEN,
+    DEFAULT_IMAGE_TOKEN,
+    IMAGE_TOKEN_INDEX,
+)
+from model.llava.conversation import conv_templates
+from model.llava.mm_utils import get_model_name_from_path, tokenizer_image_token
+from model.llava.model.builder import load_pretrained_model
+from model.llava.utils import disable_torch_init
 
 
 def check_yes_or_no(string):
@@ -42,7 +48,7 @@ def eval_model(args):
     disable_torch_init()
 
     model_name = get_model_name_from_path(args.model_path)  # llava-v1.5-7b
-    tokenizer, model, image_processor, context_len = load_pretrained_model(
+    tokenizer, model, image_processor, _context_len = load_pretrained_model(
         args.model_path, args.model_base, model_name
     )
 
@@ -62,28 +68,48 @@ def eval_model(args):
             label = question["label"]
 
             image_caption = captions[i]["caption"]
-            image_caption = "Caption: {}\n".format(image_caption)
+            image_caption = f"Caption: {image_caption}\n"
 
-            task_prompt = "Task: The caption has potential errors and may not match what is in the image. " \
-            "Make sure to cross-check the image details with the caption provided. " \
-            "Your task is to answer my question based on the visual details in the image. Think step by step.\nQuestion: "
+            task_prompt = (
+                "Task: The caption has potential errors and may not match what is in the image. "
+                "Make sure to cross-check the image details with the caption provided. "
+                "Your task is to answer my question based on the visual details in the image. Think step by step.\nQuestion: "
+            )
 
-            image_token_se = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
+            image_token_se = (
+                DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
+            )
             if model.config.mm_use_im_start_end:
                 qs = image_token_se + "\n" + image_caption + task_prompt + qs.lower()
             else:
-                qs = DEFAULT_IMAGE_TOKEN + "\n" + image_caption + task_prompt + qs.lower()
+                qs = (
+                    DEFAULT_IMAGE_TOKEN
+                    + "\n"
+                    + image_caption
+                    + task_prompt
+                    + qs.lower()
+                )
 
             conv = conv_templates[args.conv_mode].copy()
             conv.append_message(conv.roles[0], qs)
             conv.append_message(conv.roles[1], None)
             prompt = conv.get_prompt()
 
-            image = Image.open(os.path.join(args.image_folder, image_file)).convert("RGB")
-            image_tensor = image_processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+            image = Image.open(os.path.join(args.image_folder, image_file)).convert(
+                "RGB"
+            )
+            image_tensor = image_processor.preprocess(image, return_tensors="pt")[
+                "pixel_values"
+            ][0]
             image_tensor = image_tensor.unsqueeze(0).half().cuda()
 
-            input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
+            input_ids = (
+                tokenizer_image_token(
+                    prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                )
+                .unsqueeze(0)
+                .cuda()
+            )
 
             with torch.inference_mode():
                 output_model = model(input_ids, images=image_tensor, return_dict=True)
@@ -91,25 +117,33 @@ def eval_model(args):
                 probabilities = torch.softmax(predictions[0, -1, :], dim=-1)
                 top_k_values, top_k_indices = probabilities.topk(args.topk)
 
-                predicted_tokens = tokenizer.decode(top_k_indices.tolist(), skip_special_tokens=True).strip().split()
+                predicted_tokens = (
+                    tokenizer.decode(top_k_indices.tolist(), skip_special_tokens=True)
+                    .strip()
+                    .split()
+                )
                 aggregation_dict = {"Yes": 0, "No": 0}
 
                 for token, value in zip(predicted_tokens, top_k_values):
                     if token in aggregation_dict:
                         aggregation_dict[token] += value.item()
 
-                final_answer = "Yes" if aggregation_dict["Yes"] > aggregation_dict["No"] else "No"
+                final_answer = (
+                    "Yes" if aggregation_dict["Yes"] > aggregation_dict["No"] else "No"
+                )
 
             answer_id = shortuuid.uuid()
-            answer_json = json.dumps({
-                "question_id": idx,
-                "question": question["text"],
-                "answer": final_answer,
-                "label": label,
-                "aggregation_logits": aggregation_dict,
-                "answer_id": answer_id,
-                "model_name": model_name
-            })
+            answer_json = json.dumps(
+                {
+                    "question_id": idx,
+                    "question": question["text"],
+                    "answer": final_answer,
+                    "label": label,
+                    "aggregation_logits": aggregation_dict,
+                    "answer_id": answer_id,
+                    "model_name": model_name,
+                }
+            )
             f.write(answer_json + "\n")
             f.flush()
 
@@ -119,9 +153,21 @@ if __name__ == "__main__":
     parser.add_argument("--model-path", type=str, default="liuhaotian/llava-v1.5-7b")
     parser.add_argument("--model-base", type=str, default=None)
     parser.add_argument("--image-folder", type=str, default="data/coco")
-    parser.add_argument("--question-file", type=str, default="benchmark/POPE/coco/coco_pope_adversarial.jsonl")
-    parser.add_argument("--answer-file", type=str, default="output/coco_pope/NF/NF_llava_negative_coco_adversarial_pope.jsonl")
-    parser.add_argument("--caption-file", type=str, default="output/coco_pope/caption/coco_pope_adversarial_caption_llava_negative.jsonl")
+    parser.add_argument(
+        "--question-file",
+        type=str,
+        default="benchmark/POPE/coco/coco_pope_adversarial.jsonl",
+    )
+    parser.add_argument(
+        "--answer-file",
+        type=str,
+        default="output/coco_pope/NF/NF_llava_negative_coco_adversarial_pope.jsonl",
+    )
+    parser.add_argument(
+        "--caption-file",
+        type=str,
+        default="output/coco_pope/caption/coco_pope_adversarial_caption_llava_negative.jsonl",
+    )
     parser.add_argument("--conv-mode", type=str, default="llava_v1")
     parser.add_argument("--topk", type=int, default=3)
     parser.add_argument("--threshold", type=float, default=0.001)

@@ -1,5 +1,6 @@
-torch
-jsonlines
+shortuuid
 tqdm
-PIL
-transformers
+sentencepiece
+protobuf
+accelerate
+transformers==4.37.2

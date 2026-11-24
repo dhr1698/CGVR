@@ -4,9 +4,19 @@ import json
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gt_file", type=str, default="benchmark/POPE/coco/coco_pope_adversarial.jsonl")
-    parser.add_argument("--gen_file_negative", type=str, default="output/coco_pope/NF/NF_llava_contradiction_coco_adversarial_pope.jsonl")
-    parser.add_argument("--gen_file_normal", type=str, default="output/coco_pope/NF/NF_llava_guide_coco_adversarial_pope.jsonl")
+    parser.add_argument(
+        "--gt_file", type=str, default="benchmark/POPE/coco/coco_pope_adversarial.jsonl"
+    )
+    parser.add_argument(
+        "--gen_file_contradiction",
+        type=str,
+        default="output/coco_pope/NF/NF_llava_contradiction_coco_adversarial_pope.jsonl",
+    )
+    parser.add_argument(
+        "--gen_file_guide",
+        type=str,
+        default="output/coco_pope/NF/NF_llava_guide_coco_adversarial_pope.jsonl",
+    )
     parser.add_argument("--a", type=float, default=0.6)
     parser.add_argument("--b", type=float, default=0.4)
     return parser.parse_args()
@@ -16,7 +26,7 @@ def load_jsonl(file_path):
     try:
         with open(file_path, "r") as f:
             return [json.loads(l) for l in f]
-    except Exception as e:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
         print(f"Failed to load or parse {file_path}: {e}")
         return []
 
@@ -35,9 +45,9 @@ def eval_predictions(args, gts, predictions):
     true_pos, true_neg, false_pos, false_neg, unknown, yes_answers = 0, 0, 0, 0, 0, 0
     weights = (args.a, args.b)
 
-    for gt, negative, normal in zip(gts, *predictions):
+    for gt, contradiction, guide in zip(gts, *predictions):
         gt_answer = gt["label"].lower().strip()
-        yes_prob, no_prob = compute_probabilities(weights, negative, normal)
+        yes_prob, no_prob = compute_probabilities(weights, contradiction, guide)
         gen_answer = "yes" if yes_prob > no_prob else "no"
 
         if gt_answer in {"yes", "no"}:
@@ -71,17 +81,19 @@ def eval_predictions(args, gts, predictions):
 def main():
     args = parse_args()
     gts = load_jsonl(args.gt_file)
-    negative_predictions = load_jsonl(args.gen_file_negative)
-    normal_predictions = load_jsonl(args.gen_file_normal)
+    contradiction_predictions = load_jsonl(args.gen_file_contradiction)
+    guide_predictions = load_jsonl(args.gen_file_guide)
 
-    results = eval_predictions(args, gts, (negative_predictions, normal_predictions))
+    results = eval_predictions(
+        args, gts, (contradiction_predictions, guide_predictions)
+    )
 
-    print(f"Accuracy: {results[0]*100:.2f}%")
-    print(f"Precision: {results[1]*100:.2f}%")
-    print(f"Recall: {results[2]*100:.2f}%")
-    print(f"F1 Score: {results[3]*100:.2f}%")
-    print(f"Yes Proportion: {results[4]*100:.2f}%")
-    print(f"Unknown Proportion: {results[5]*100:.2f}%")
+    print(f"Accuracy: {results[0] * 100:.2f}%")
+    print(f"Precision: {results[1] * 100:.2f}%")
+    print(f"Recall: {results[2] * 100:.2f}%")
+    print(f"F1 Score: {results[3] * 100:.2f}%")
+    print(f"Yes Proportion: {results[4] * 100:.2f}%")
+    print(f"Unknown Proportion: {results[5] * 100:.2f}%")
 
 
 if __name__ == "__main__":

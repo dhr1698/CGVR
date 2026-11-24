@@ -1,22 +1,28 @@
 import argparse
-import torch
-
 import json
 import os
-import shortuuid
-
 import sys
-sys.path.append("./")
 
-from model.llava.constants import IMAGE_TOKEN_INDEX, DEFAULT_IMAGE_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
-from model.llava.conversation import conv_templates
-from model.llava.model.builder import load_pretrained_model
-from model.llava.utils import disable_torch_init
-from model.llava.mm_utils import tokenizer_image_token, get_model_name_from_path
+import shortuuid
+import torch
+
+sys.path.append("./")
+sys.path.append("./model")
 
 from PIL import Image
 from tqdm import tqdm
 from transformers import set_seed
+
+from model.llava.constants import (
+    DEFAULT_IM_END_TOKEN,
+    DEFAULT_IM_START_TOKEN,
+    DEFAULT_IMAGE_TOKEN,
+    IMAGE_TOKEN_INDEX,
+)
+from model.llava.conversation import conv_templates
+from model.llava.mm_utils import get_model_name_from_path, tokenizer_image_token
+from model.llava.model.builder import load_pretrained_model
+from model.llava.utils import disable_torch_init
 
 
 def eval_model(args):
@@ -24,7 +30,7 @@ def eval_model(args):
     disable_torch_init()
 
     model_name = get_model_name_from_path(args.model_path)  # llava-v1.5-7b
-    tokenizer, model, image_processor, context_len = load_pretrained_model(
+    tokenizer, model, image_processor, _context_len = load_pretrained_model(
         args.model_path, args.model_base, model_name
     )
 
@@ -38,7 +44,9 @@ def eval_model(args):
             idx = question["question_id"]
             image_file = question["image"]
 
-            image_token_se = DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
+            image_token_se = (
+                DEFAULT_IM_START_TOKEN + DEFAULT_IMAGE_TOKEN + DEFAULT_IM_END_TOKEN
+            )
             if model.config.mm_use_im_start_end:
                 qs = image_token_se + "\n"
             else:
@@ -55,12 +63,21 @@ def eval_model(args):
             conv.append_message(conv.roles[1], None)
             prompt = conv.get_prompt()
 
-            image = Image.open(os.path.join(args.image_folder, image_file)).convert("RGB")
-            image_tensor = image_processor.preprocess(image, return_tensors="pt")["pixel_values"][0]
+            image = Image.open(os.path.join(args.image_folder, image_file)).convert(
+                "RGB"
+            )
+            image_tensor = image_processor.preprocess(image, return_tensors="pt")[
+                "pixel_values"
+            ][0]
             image_tensor = image_tensor.unsqueeze(0).half().cuda()
 
-            input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt").unsqueeze(0).cuda()
-            input_token_len = input_ids.shape[1]
+            input_ids = (
+                tokenizer_image_token(
+                    prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors="pt"
+                )
+                .unsqueeze(0)
+                .cuda()
+            )
 
             with torch.inference_mode():
                 output_ids = model.generate(
@@ -74,16 +91,20 @@ def eval_model(args):
                     use_cache=True,
                 )
 
-            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0].strip()
+            outputs = tokenizer.batch_decode(output_ids, skip_special_tokens=True)[
+                0
+            ].strip()
 
             answer_id = shortuuid.uuid()
-            answer_json = json.dumps({
-                "question_id": idx,
-                "question": question["text"],
-                "caption": outputs,
-                "answer_id": answer_id,
-                "model_name": model_name
-            })
+            answer_json = json.dumps(
+                {
+                    "question_id": idx,
+                    "question": question["text"],
+                    "caption": outputs,
+                    "answer_id": answer_id,
+                    "model_name": model_name,
+                }
+            )
             f.write(answer_json + "\n")
             f.flush()
 
@@ -93,8 +114,16 @@ if __name__ == "__main__":
     parser.add_argument("--model-path", type=str, default="liuhaotian/llava-v1.5-7b")
     parser.add_argument("--model-base", type=str, default=None)
     parser.add_argument("--image-folder", type=str, default="data/coco")
-    parser.add_argument("--question-file", type=str, default="benchmark/POPE/coco/coco_pope_adversarial.jsonl")
-    parser.add_argument("--answer-file", type=str, default="output/coco_pope/caption/coco_pope_adversarial_caption_llava_normal.jsonl")
+    parser.add_argument(
+        "--question-file",
+        type=str,
+        default="benchmark/POPE/coco/coco_pope_adversarial.jsonl",
+    )
+    parser.add_argument(
+        "--answer-file",
+        type=str,
+        default="output/coco_pope/caption/coco_pope_adversarial_caption_llava_normal.jsonl",
+    )
     parser.add_argument("--perspective", type=str, default="normal")
     parser.add_argument("--conv-mode", type=str, default="llava_v1")
     parser.add_argument("--temperature", type=float, default=0.7)
